@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Ticket Booking System</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f4f9; }
+    h1 { color: #333; }
+    .controls { margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(5, 60px); gap: 12px; margin-top: 15px; }
+    .seat { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 6px; cursor: pointer; color: #fff; }
+    .available { background-color: #2ec4b6; }
+    .held { background-color: #ff9f1c; cursor: not-allowed; }
+    .booked { background-color: #e71d36; cursor: not-allowed; }
+    .ticket { margin-top: 25px; padding: 20px; background: #fff; border: 1px solid #ccc; width: 300px; text-align: center; }
+    .ticket img { width: 180px; height: 180px; }
+  </style>
+</head>
+<body>
+
+  <h1>Ticket Booking System - Select seat</h1>
+  <div class="controls">
+    <label>Email: </label>
+    <input type="email" id="email" value="user@example.com" />
+    <button onclick="joinWaitlist()">Join Waitlist</button>
+  </div>
+
+  <div id="selectseat" class="grid"></div>
+
+  <div id="ticketContainer" class="ticket" style="display:none;">
+    <h3>Booking Confirmed!</h3>
+    <p id="ticketRef"></p>
+    <img id="qrCode" src="" alt="QR Code Ticket" />
+  </div>
+
+  <script>
+    const socket = io();
+    let selectedSeat = null;
+
+    async function loadSeats() {
+      const res = await fetch('/api/seats');
+      const seats = await res.json();
+      const map = document.getElementById('selectseat');
+      map.innerHTML = '';
+
+      seats.forEach(seat => {
+        const div = document.createElement('div');
+        div.className = `seat ${seat.status}`;
+        div.innerText = seat.seat_number;
+        if (seat.status === 'available') {
+          div.onclick = () => handleSeatClick(seat.seat_number);
+        }
+        map.appendChild(div);
+      });
+    }
+
+    async function handleSeatClick(seatNumber) {
+      const email = document.getElementById('email').value;
+      
+      // Step 1: Hold Seat
+      const holdRes = await fetch('/api/seats/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seatNumber, userEmail: email })
+      });
+
+      const holdData = await holdRes.json();
+      if (!holdRes.ok) {
+        alert(holdData.error);
+        return;
+      }
+
+      // Step 2: Book Seat immediately upon selection
+      const bookRes = await fetch('/api/seats/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seatNumber, userEmail: email })
+      });
+
+      const bookData = await bookRes.json();
+      if (bookRes.ok) {
+        document.getElementById('ticketContainer').style.display = 'block';
+        document.getElementById('ticketRef').innerText = `Ref: ${bookData.bookingRef} | Seat: ${seatNumber}`;
+        document.getElementById('qrCode').src = bookData.qrDataUrl;
+      }
+    }
+
+    async function joinWaitlist() {
+      const email = document.getElementById('email').value;
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: email })
+      });
+      const data = await res.json();
+      alert(data.message);
+    }
+
+    socket.on('seatUpdated', () => {
+      loadSeats();
+    });
+
+    loadSeats();
+  </script>
+</body>
+</html>
